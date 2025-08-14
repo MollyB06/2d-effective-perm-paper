@@ -9,8 +9,8 @@ full_flux_above_list_2_5 = np.genfromtxt('TCfull_flux_above_array').tolist()
 full_flux_below_list_2_5 =np.genfromtxt('TCfull_flux_below_array').tolist()
 hom_flux_above_list_2_5 = np.genfromtxt('TChom_flux_above_array').tolist()
 hom_flux_below_list_2_5 = np.genfromtxt('TChom_flux_below_array').tolist()
-# delt_list = np.genfromtxt("delt_array").tolist()
-delt_list = [0.05,0.1,0.25,0.5,1.25,2.5]
+delt_list = np.genfromtxt("delt_array").tolist()
+
 
 ###plotting part
 rel_full_flux_above_2_5=[abs(full_flux_above_list_2_5[i]-full_flux_above_list_2_5[0])/full_flux_above_list_2_5[0] for i in range(len(delt_list))]
