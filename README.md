@@ -4,7 +4,7 @@
 Authors: Molly Brennan contact: molly.brennan.22@ucl.ac.uk
 
 Dependencies:
-Version used: Python 2.12.2, FEniCSx
+Version used: Python 3.12.2, FEniCSx
 
 #Computational scripts
 
