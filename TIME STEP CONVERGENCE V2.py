@@ -935,40 +935,6 @@ def full_sim(delt, final_time = 2.55):
 
 
 
-
-
-
-
-
-
-    
-
-
-   
-
-
-
-
-    ##################################TIME STEPPING LOOP POINT WANT BOTH FULL AND EFFECTIVE INSIDE
-    ##currently below is timestepping for full method, in this form will need to split and reincorporate mixed solutions as needed?
-
-    ##empty lists to store errors and times
-    times_list_round = []
-
-
-
-
-
-
-
-    
-
-
-        
-        
-
-        
-
 ###looping over time step sizes
 for delt in delt_list:
     effective_sim(delt)
