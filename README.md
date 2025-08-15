@@ -7,6 +7,7 @@ Dependencies:
 Version used: Python 3.12.2, FEniCSx (Dolfinx 0.7.3)
 
 #Environment set up and package installation
+
 conda create -n fenicsx-env
 conda activate fenicsx-env
 conda install -c conda-forge fenics-dolfinx==0.7.3 mpich pyvista
