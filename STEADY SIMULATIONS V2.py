@@ -46,6 +46,8 @@ epsilon = 1*(10**(-15)) # to use as small number
 dist_1= 0.5
 dist_2 = 1.5
 eps_list=[0.4,0.25,0.2,0.15,0.1,0.05,0.025] #ratio of channel width to spacing, choose values as required
+chosen_eps_vals = [0.05,0.25] #eps values for plotting
+levels = np.linspace(0.025,0.975,39) # contour spacing
 
 #empty lists to store flux and error values 
 permeability_list=[]
@@ -79,7 +81,7 @@ flux_full_squish_below_2_list=[]
 flux_num_above_2_list=[]
 flux_num_below_2_list=[]
 
-##create mesh to use in effective simulations - shouldn't change with membrane geometry just make once outside?
+##create mesh to use in effective simulations - shouldn't change with membrane geometry just make once outside
 # Define the desired mesh size
 mesh_size = 0.008
 gdim = 2
@@ -283,6 +285,129 @@ line_length_1_below = assemble_scalar(form(1 * dS_hom(flux_line_below_1_marker))
 line_length_2_above = assemble_scalar(form(1 * dS_hom(flux_line_above_2_marker)))
 line_length_2_below = assemble_scalar(form(1 * dS_hom(flux_line_below_2_marker)))
 
+
+#create gap mesh once outside for visualisation
+
+gdim = 2
+mesh_comm = MPI.COMM_WORLD
+model_rank = 0
+gmsh.initialize()
+
+###making gap mesh with physical entities on gap boundaries for proper cell alignment
+if mesh_comm.rank == model_rank:
+    rectangle = gmsh.model.occ.addRectangle(0, 0, 0, width, 2*R, tag=1)
+    eff_mem= gmsh.model.occ.addRectangle(0,R-L,0, width, 2*L)
+    
+    
+    
+    whole_domain = gmsh.model.occ.cut([(gdim, rectangle)], [(gdim, eff_mem)])
+    gmsh.model.occ.synchronize()
+
+    gmsh.model.mesh.setSize(gmsh.model.getEntities(0), mesh_size)
+    # Add points for horizontal lines for gap boundaries
+    p1_above = gmsh.model.occ.addPoint(0, R + L, 0)
+    p2_above = gmsh.model.occ.addPoint(width, R + L, 0)
+    line_above = gmsh.model.occ.addLine(p1_above, p2_above)
+    gmsh.model.occ.synchronize()
+
+
+    p1_below = gmsh.model.occ.addPoint(0, R - L, 0)
+    p2_below = gmsh.model.occ.addPoint(width, R - L, 0)
+    line_below = gmsh.model.occ.addLine(p1_below, p2_below)
+    gmsh.model.occ.synchronize()
+
+    
+            
+    
+    # Fragment the added lines with the existing geometry
+    gmsh.model.occ.fragment([(1, line_above), (1, line_below)], gmsh.model.getEntities(dim=2))
+
+    
+    # Synchronize and mesh
+    gmsh.model.occ.synchronize()
+    
+
+    #set mesh size for all points
+    gmsh.model.mesh.setSize(gmsh.model.getEntities(0), mesh_size)
+    
+
+
+    #tag boundaries
+    top_wall=[]
+    bottom_wall=[]
+    side_walls=[]
+    membrane_boundary=[]
+    
+    
+    for line in gmsh.model.getEntities(dim=1):
+        com = gmsh.model.occ.getCenterOfMass(line[0], line[1])
+        if np.isclose(com[1],0):
+            bottom_wall.append(line[1])
+        elif np.isclose(com[1],2*R):
+            top_wall.append(line[1])
+        elif np.isclose(com[1], (R-L)/2):
+            side_walls.append(line[1])
+        elif np.isclose(com[1], R+L + (R-L)/2):
+            side_walls.append(line[1])           
+        else:
+            membrane_boundary.append(line[1])
+
+    #add tag for domain
+    domain_volume=[]
+    for surface in gmsh.model.getEntities(dim=2):
+        com = gmsh.model.occ.getCenterOfMass(surface[0], surface[1])
+        domain_volume.append(surface[1])
+
+
+
+    
+    #set tags
+    top_wall_marker=1
+    bottom_wall_marker=2
+    side_walls_marker=3
+    membrane_walls_marker=4
+
+
+
+
+    #add membranes as physical groups in the mesh
+    gmsh.model.addPhysicalGroup(2, domain_volume,0)
+    gmsh.model.addPhysicalGroup(1, top_wall, top_wall_marker)
+    gmsh.model.addPhysicalGroup(1, bottom_wall, bottom_wall_marker)
+    gmsh.model.addPhysicalGroup(1, membrane_boundary, membrane_walls_marker)
+
+    
+    
+    #meshing fields to define how mesh varies throughout the domain making it finer close to the membrane edges
+    #creates distance field to calculate distance from certain edges
+    gmsh.model.mesh.field.add("Distance",1)
+    gmsh.model.mesh.field.setNumbers(1, "EdgesList", membrane_boundary)
+    #adds threshold field to control the mesh size based on the distance calculated by distance field
+    gmsh.model.mesh.field.add("Threshold",2)
+    gmsh.model.mesh.field.setNumber(2,"IField",1) #links threshold field to distance field
+    gmsh.model.mesh.field.setNumber(2,"LcMin", mesh_size/5) #sets minimum element size
+    gmsh.model.mesh.field.setNumber(2,"LcMax",  5*mesh_size) #sets maximum element size
+    gmsh.model.mesh.field.setNumber(2,"DistMin", 2*mesh_size) # sets the distance from the edges from which element size grows from minimum
+    gmsh.model.mesh.field.setNumber(2, "DistMax", 20*mesh_size) # sets distance above which element size becomes maximum
+    #use minimum field to ensure mesh size adheres to smallest size defined by threshold field
+    gmsh.model.mesh.field.add("Min",5) #adds minumum field
+    gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2]) #sets minimum field to include the threshold field ID
+    gmsh.model.mesh.field.setAsBackgroundMesh(5) #sets minimum field as background field making it the controlling field for mesh generation
+    #use gmsh to generate the mesh using defined fields and physical groups defining the meshing algorithm
+    gmsh.option.setNumber("Mesh.Algorithm", 2) #try algorithms 2 (automatic) or 7 (BAMG(useful when certain directions need finer refinement))
+    gmsh.model.mesh.generate(gdim)
+    gmsh.model.mesh.optimize("Netgen")
+
+
+
+
+    #convert the gmsh model to fenics mesh
+
+    gap_mesh, ct_gap, ft_gap= model_to_mesh(gmsh.model, mesh_comm, model_rank, gdim=2) #sets the mesh, cell tags and facet tags
+    ft_gap.name = "Facet markers"
+
+    gmsh.finalize()
+
 def effective_problem(eps,n):
     delta = width/n #i.e delta=0.25
 
@@ -427,54 +552,64 @@ def effective_problem(eps,n):
 
     u_an.vector[:] = u1_solution_array + u2_solution_array
 
-    if eps==0.25 or eps==0.05: ###plot analytical solution for chosen values of eps
-        gap_mesh = create_rectangle(comm,[[0,0],[width, 2*R]],[100,100])
+    if eps in chosen_eps_vals: ###plot analytical solution for chosen values of eps
+
         V_gap = functionspace(gap_mesh, ("CG", 1))
         coords_gap = gap_mesh.geometry.x
 
-            ######## INTERPOLATING ANALYTICAL
-        #interpolating the numerical solution onto the new mesh
+         ######## INTERPOLATING ANALYTICAL
         values_gap_an = np.zeros(coords_gap.shape[0])
         coords_hom = mesh_hom.geometry.x
         u_gap_an = Function(V_gap)
 
-
+         
 
         # Create bounding box tree for old mesh
 
         bb_tree_hom = geometry.bb_tree(mesh_hom,tdim)
 
 
-        # Interpolate values
         for i, coord in enumerate(coords_gap):
-            x, y, _ = coord  # Extract only x and y components, ignore the third (z) component if present
-            if y < R - L:
-                # Directly use the old function value
+            x, y, _ = coord
+
+            
+            if y < R - L-1e-2:
                 point = np.array([x, y, 0.0])
-                cell_candidates = geometry.compute_collisions_points(bb_tree_hom, point)
-                colliding_cells = geometry.compute_colliding_cells(mesh_hom, cell_candidates, point)
-                if len(colliding_cells) > 0:
-                    closest_cell = colliding_cells[0]
-                    values_gap_an[i] = u_an.eval([point], [closest_cell])[0]
-                else:
-                    values_gap_an[i] = 0
-            elif y > R + L:
-                # Shift y-coordinate by -2L
-                shifted_coord = (x, y - 2 * L, 0.0)
-                cell_candidates = geometry.compute_collisions_points(bb_tree_hom, shifted_coord)
-                colliding_cells = geometry.compute_colliding_cells(mesh_hom, cell_candidates, shifted_coord)
-                if len(colliding_cells) > 0:
-                    closest_cell = colliding_cells[0]
-                    values_gap_an[i] = u_an.eval([shifted_coord], [closest_cell])[0]
-                else:
-                    values_gap_an[i] = 0
+
+            elif np.isclose(y, R - L, atol=1e-2):
+                # Force continuity with bottom region
+                point = np.array([x, y - 1e-2, 0.0])  # tiny downward shift on interface as it takes value of upper half
+
+            # Top rectangle: shift down by 2L to map back to original domain
+            elif y >= R + L:
+                point = np.array([x, y - 2 * L, 0.0])  # shift down by gap height
+
+            # Inside the gap: no solution, set to zero
             else:
-                # Set values to zero or some default if desired
-                values_gap_an[i] = 0
+                values_gap_an[i] = 0.0
+                continue
+
+            # Interpolate from original mesh
+            cell_candidates = geometry.compute_collisions_points(bb_tree_hom, point)
+            colliding_cells = geometry.compute_colliding_cells(mesh_hom, cell_candidates, point)
+
+            if len(colliding_cells) > 0:
+                closest_cell = colliding_cells[0]
+                values_gap_an[i] = u_an.eval([point], [closest_cell])[0]
+            else:
+                # Fallback: nearest neighbor
+                distances = np.linalg.norm(coords_hom[:, :2] - point[:2], axis=1)
+                nearest_idx = np.argmin(distances)
+                values_gap_an[i] = u_an.x.array[nearest_idx]
 
 
         # Assign interpolated values to the new function
         u_gap_an.x.array[:] = values_gap_an
+
+       
+
+
+    
 
         #plot the new function on new mesh with gap
         gap_mesh.topology.create_connectivity(tdim,tdim)
@@ -486,26 +621,33 @@ def effective_problem(eps,n):
         grid_u.point_data["u_gap_an"] = u_gap_an.x.array
         grid_u.set_active_scalars("u_gap_an")
 
+       
 
         p3= pyvista.Plotter(window_size=[800, 800])
         p3.reset_camera() 
-        p3.add_mesh(grid_u, clim=[0, grid_u.point_data["u_gap_an"].max()], show_edges=False, show_scalar_bar=False )
+        p3.add_mesh(grid_u, clim=[0, grid_u.point_data["u_gap_an"].max()], show_edges=False, show_scalar_bar=False)
         p3.add_scalar_bar(
-        title="c",  # Label for the colorbar
-        title_font_size=30,  # Font size for the label
+        title="c",  
+        title_font_size=30,  
         label_font_size=25,  # Font size for the numbers
-        shadow=False,         # Optional: adds shadow to the title
-        position_x=0.15,      # Position of the scalar bar
-        position_y=0.01,
-        width=0.7,          # Width of the colorbar
-        height=0.2           # Height of the colorbar
-    )
-    
+        vertical = True,
+        position_x=0.86,      # Position of the scalar bar
+        position_y=0.165,
+        width=0.15,          
+        height=0.7           
+    )   
+        
+       
+        contours3 = grid_u.contour(levels)
+
+        
+
+        
+        p3.add_mesh(contours3,color = 'black', line_width=1,scalar_bar_args=None,show_scalar_bar=False )
         p3.view_xy()
         p3.camera.zoom(1)
-        p3.save_graphic("int_u_gap_an_perm{}_delta_{}_eps_{}.pdf".format(P,delta,eps))
+        p3.save_graphic("cont_int_u_gap_an_perm{}_delta_{}_eps_{}.svg".format(P,delta,eps))
         p3.close()
-
 
     #NUMERICAL SOLUTION OF EFFECTIVE
     flux = -grad(u_vis)
@@ -582,6 +724,8 @@ def effective_problem(eps,n):
     gc.collect()
     # Optional: small sleep to give OS a moment (not required)
     time.sleep(0.1)
+    if eps in chosen_eps_vals:
+        return u_an ##to use in visualising absolute error on gap mesh
     return
 
 def full_problem(eps,n):
@@ -783,7 +927,7 @@ def full_problem(eps,n):
     uh = problem.solve()
 
     ####VISUALISE FULL SOLUTION FOR CHOOSEN MEMBRANE GEOMETRY
-    if eps==0.25 or eps==0.05:
+    if eps in chosen_eps_vals:
         mesh_full.topology.create_connectivity(tdim, tdim) #ensures connectivity information for tdim (cells) is availabel (i.e. how cells connect to each other)
         topology, cell_types, x = vtk_mesh(mesh_full, tdim) # extracts mesh data in a format compatible with visualisation toolkit used by pyvista topology = connectivity, x = coordinates of the vertices
         grid = pyvista.UnstructuredGrid(topology, cell_types, x) #creates unstructured grid object for visualisation with topology etc defined above
@@ -792,27 +936,28 @@ def full_problem(eps,n):
         grid.set_active_scalars("Marker")
 
 
-
+          
         grid_uh = pyvista.UnstructuredGrid(*vtk_mesh(V))
         grid_uh.point_data["uh"] = uh.x.array.real
         grid_uh.set_active_scalars("uh")
         p2 = pyvista.Plotter(window_size=[800, 800])
         p2.add_mesh(grid_uh, clim=[0, grid_uh.point_data["uh"].max()],show_edges=False, show_scalar_bar=False )
         p2.add_scalar_bar(
-        title="c",  # Label for the colorbar
-        title_font_size=30,  # Font size for the label
-        label_font_size=25,  # Font size for the numbers
-        shadow=False,         # Optional: adds shadow to the title
-        position_x=0.15,      # Position of the scalar bar
-        position_y=0.01,
-        width=0.7,          # Width of the colorbar
-        height=0.2           # Height of the colorbar
-    )
-
+        title="c",  
+        title_font_size=30,  
+        label_font_size=25,  
+         vertical = True,
+        position_x=0.86,      
+        position_y=0.165,
+        width=0.15,          
+        height=0.7           
+    )   
+        contours = grid_uh.contour(levels)
+        p2.add_mesh(contours, color='black', line_width=1,scalar_bar_args=None,show_scalar_bar=False )
     #set show_edges to true to see the mesh overlayed
         p2.view_xy()
         p2.camera.zoom(1)
-        p2.save_graphic("full_u_flux_eps{}_delta{}_perm_{}.eps".format(eps,delta,P), raster=False) 
+        p2.save_graphic("full_u_flux_eps{}_delta{}_perm_{}.svg".format(eps,delta,P), raster=False) 
         p2.close()
 
 
@@ -945,6 +1090,8 @@ def full_problem(eps,n):
     gc.collect()
     # Optional: small sleep to give OS a moment (not required)
     time.sleep(0.1)
+    if eps in chosen_eps_vals:
+        return u_full_squish  ##to use in visualising absolute error on gap mesh
     return
 
 
@@ -966,6 +1113,109 @@ for eps in eps_list:
     er_an_v_full_2_above.append(abs(flux_an_above_2_list[run]-flux_full_squish_above_2_list[run]))
     er_an_v_full_2_below.append(abs(flux_an_below_2_list[run]-flux_full_squish_below_2_list[run]))
     run+=1
+    ##interpolate full solution on gap mesh and visualising difference between analytical effective solution and full simulation
+    if eps in chosen_eps_vals:
+        P = 1/((L/eps)+(2*delta/np.pi)*(np.log(1/(8*eps))+1))
+        u_full_squish = full_problem(eps,n=20)
+        u_an= effective_problem(eps,n=20)
+        
+
+        
+
+        V_gap = functionspace(gap_mesh, ("CG", 1))
+        V_hom = functionspace(mesh_hom, ("CG", 1))
+        coords_gap = gap_mesh.geometry.x
+        u_diff_squish = Function(V_hom)
+        u_diff_squish.x.array[:] = abs(u_full_squish.x.array - u_an.x.array)
+
+        values_gap_full = np.zeros(coords_gap.shape[0])
+        coords_hom = mesh_hom.geometry.x
+       
+
+  
+
+        # Create bounding box tree for old mesh
+
+        bb_tree_hom = geometry.bb_tree(mesh_hom,tdim)
+
+
+
+
+        for i, coord in enumerate(coords_gap):
+            x, y, _ = coord
+
+            
+            if y < R - L-1e-6:
+                point = np.array([x, y, 0.0])
+
+            elif np.isclose(y, R - L, atol=1e-6):
+                point = np.array([x, y - 1e-6, 0.0])  # tiny downward shift
+
+            # Top rectangle: shift down by 2L to map back to original domain
+            elif y >= R + L:
+                point = np.array([x, y - 2 * L, 0.0])  # shift down by gap height
+
+            # Inside the gap: no solution, set to zero
+            else:
+                values_gap_full[i] = 0.0
+                continue
+
+            # Interpolate from original mesh
+            cell_candidates = geometry.compute_collisions_points(bb_tree_hom, point)
+            colliding_cells = geometry.compute_colliding_cells(mesh_hom, cell_candidates, point)
+
+            if len(colliding_cells) > 0:
+                closest_cell = colliding_cells[0]
+                values_gap_full[i] = u_diff_squish.eval([point], [closest_cell])[0]
+            else:
+                # Fallback: nearest neighbor
+                distances = np.linalg.norm(coords_hom[:, :2] - point[:2], axis=1)
+                nearest_idx = np.argmin(distances)
+                values_gap_full[i] = u_diff_squish.x.array[nearest_idx]
+
+        
+
+        # Assign interpolated values to the new function
+        u_diff = Function(V_gap)
+        u_diff.x.array[:] = values_gap_full
+
+    
+
+    
+        #plot the new function on new mesh with gap
+        gap_mesh.topology.create_connectivity(tdim,tdim)
+        topology, cell_types, x= vtk_mesh(gap_mesh, tdim)
+        grid = pyvista.UnstructuredGrid(topology, cell_types, x)
+        num_local_cells = gap_mesh.topology.index_map(tdim).size_local
+        grid_u = pyvista.UnstructuredGrid(*vtk_mesh(V_gap))
+        num_local_cells = gap_mesh.topology.index_map(tdim).size_local
+        grid_u.point_data["u_diff"] = u_diff.x.array
+        grid_u.set_active_scalars("u_diff")
+       
+
+        p4= pyvista.Plotter(window_size=[800, 800])
+        p4.reset_camera() 
+        p4.add_mesh(grid_u, clim=[0, grid_u.point_data["u_diff"].max()], show_edges=False, show_scalar_bar=False)
+        p4.add_scalar_bar(
+        title="c",  
+        title_font_size=30,  
+        label_font_size=25, 
+         vertical = True,
+        position_x=0.86,     
+        position_y=0.165,
+        width=0.15,          
+    )    
+        
+        #uncomment to add contours to error plots
+        # step = grid_u.point_data["u_diff"].max()- grid_u.point_data["u_diff"].min()
+        # levels = np.linspace(step/25,grid_u.point_data["u_diff"].max()-step/25 ,24)
+        # contours3 = grid_u.contour(levels)
+        
+        # p4.add_mesh(contours3,color = 'black', line_width=1,scalar_bar_args=None,show_scalar_bar=False )
+        p4.view_xy()
+        p4.camera.zoom(1)
+        p4.save_graphic("abs_diff_gap_perm_contours{}_delta_{}_eps_{}.svg".format(P,delta,eps))
+        p4.close()
 
    
 
