@@ -66,7 +66,7 @@ def initial_condition(x_full):
 
 
 
-###### list of time steps sizes - if crashes may need to run in batches
+###### list of time steps sizes 
 delt_list = [0.05,0.1,0.25,0.5,1.25,2.5]
 er_num_v_full_above_2_5=[]
 er_num_v_full_below_2_5=[]
@@ -934,6 +934,40 @@ def full_sim(delt, final_time = 2.55):
     return
 
 
+
+
+
+
+
+
+
+    
+
+
+   
+
+
+
+
+    ##################################TIME STEPPING LOOP POINT WANT BOTH FULL AND EFFECTIVE INSIDE
+    ##currently below is timestepping for full method, in this form will need to split and reincorporate mixed solutions as needed?
+
+    ##empty lists to store errors and times
+    times_list_round = []
+
+
+
+
+
+
+
+    
+
+
+        
+        
+
+        
 
 ###looping over time step sizes
 for delt in delt_list:
