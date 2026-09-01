@@ -20,10 +20,12 @@ pip install pygmsh h5py
 STEADY SIMULATIONS V2.py #runs all effective and full steady simulations for varying effective permeabilties varying the ratio of channel width to spacing, generates colourmaps (Fig 7 and 8) and perm v flux data (Fig 9(a)) and flux error v perm #data (Supplementary Fig 1(a))
 
 TIMEDEPSIMSV4.py #runs all time dependent simulations for 2 different effective permeabilties (P=0.189, P=0.953) generating flux v time data (Fig 9(b)) and flux error v time data (Supplementary Fig 1(b))
+*****update**** typos corrected in FIXED2DTIMEDEP26_08.py results qualitatively unchanged for steady boundary conditions used.
 
 MESH SIZE CONVERGENCE V2.py # runs effective and full simulations for varying mesh size to generate mesh size v error data (Supplementary Fig 2(a))
 
 TIME STEP CONVERGENCE V3.py #runs time dependent effective and full simulations for varying time step size to generate time step v error data (Supplementary Fig 2(b))
+*****update**** typos corrected in FIXEDTIMESTEPCON.py
 
 
 #plotting scripts
@@ -32,11 +34,12 @@ ORDER 1 ASPECT PERM AND LAM.py #generates aspect ratio v log(lambda) and aspect 
 
 STEADY PLOTTING.py #takes data from STEADY SIMULATIONS V2.py and generates flux v perm plot (Fig 9(a)) and flux error v perm (Supplementary Fig 1(a))
 
-TIME DEP PLOTTING V2.py #takes data from TIMEDEPSIMSV4.py and generates flux vs time plot (Fig 9(b)) and flux error v time plot (Supplementary Fig 1(b))  
+TIME DEP PLOTTING V2.py #takes data from TIMEDEPSIMSV4.py and generates flux vs time plot (Fig 9(b)) and flux error v time plot (Supplementary Fig 1(b))  ***updated*** for generating the same figures from updated FIXED2DTIMEDEP26_08.py used FIXEDTIMEDEPPLOTTING.py
 
 MESH CONVERGENCE PLOTTER.py #takes data from MESH SIZE CONVERGNECE V2.py and generates mesh size v relative error plot (Supplementary Fig 2(a))
 
 TIME STEP CON PLOTTING.py #takes data from TIME STEP CONVERGENCE V3.py and generates time step size v relative error plot (Supplementary Fig 2(b))
+***updated*** for generating the same figures from updated FIXEDTIMESTEPCON.py use FIXEDTIMESTEPCONPLOTTING.py
 
 
 
